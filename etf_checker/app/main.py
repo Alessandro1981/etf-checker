@@ -8,6 +8,8 @@ from typing import Any
 
 from flask import Flask, jsonify, redirect, render_template, request, url_for
 
+from pathlib import Path
+
 from .config import EffectiveConfig, UiConfig, load_effective_config, save_ui_config
 from .etf_monitor import EtfMonitor
 
@@ -22,6 +24,35 @@ MONITOR.start()
 
 def _ingress_root() -> str:
     return os.environ.get("SUPERVISOR_INGRESS", "").rstrip("/")
+
+
+def _redact_token(token: str) -> str:
+    if not token:
+        return "<empty>"
+    if len(token) <= 8:
+        return "***"
+    return f"{token[:4]}...{token[-4:]}"
+
+
+def _log_startup_diagnostics() -> None:
+    if not LOGGER.isEnabledFor(logging.DEBUG):
+        return
+    config = load_effective_config()
+    options = config.options
+    ui = config.ui
+    LOGGER.debug("Effective config: homeassistant_url=%s", options.homeassistant_url)
+    LOGGER.debug("Effective config: notify_service=%s", options.notify_service)
+    LOGGER.debug("Effective config: poll_interval_seconds=%s", options.poll_interval_seconds)
+    LOGGER.debug("Effective config: default_threshold_percent=%s", options.default_threshold_percent)
+    LOGGER.debug("Effective config: log_level=%s", options.log_level)
+    LOGGER.debug("Effective config: homeassistant_token=%s", _redact_token(options.homeassistant_token))
+    LOGGER.debug("UI config: symbols=%s", ", ".join(ui.etf_symbols) if ui.etf_symbols else "<none>")
+    LOGGER.debug("UI config: threshold_percent=%s", ui.threshold_percent)
+    data_path = Path("/data")
+    LOGGER.debug("Data path exists: %s", data_path.exists())
+    LOGGER.debug("Options file exists: %s", Path("/data/options.json").exists())
+    LOGGER.debug("UI config file exists: %s", Path("/data/ui_config.json").exists())
+    LOGGER.debug("State file exists: %s", Path("/data/monitor_state.json").exists())
 
 
 def _merge_config(ui_config: UiConfig) -> EffectiveConfig:
@@ -109,6 +140,7 @@ def main() -> None:
     port = int(os.environ.get("PORT", "8099"))
     ingress_entry = _ingress_root()
     LOGGER.info("Starting ETF Checker on port %s (ingress root: %s)", port, ingress_entry or "-")
+    _log_startup_diagnostics()
     APP.run(host="0.0.0.0", port=port, debug=False)
 
 
