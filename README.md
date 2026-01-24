@@ -6,6 +6,8 @@ Questo repository ora contiene un add-on per Home Assistant / Hass.io che:
 - applica **una soglia percentuale unica** a tutti gli ETF;
 - invia alert tramite l'app Companion (via `notify.mobile_app_*`) quando la variazione rispetto al baseline supera la soglia.
 
+I prezzi vengono letti tramite l'endpoint pubblico di Yahoo Finance, evitando dipendenze pesanti durante la build dell'add-on.
+
 ## Come funziona la soglia
 
 Per ogni ETF viene salvato un **baseline** (prezzo di riferimento):

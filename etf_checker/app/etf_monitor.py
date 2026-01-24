@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 from dataclasses import dataclass
 from typing import Callable, Iterable
 
@@ -19,21 +18,37 @@ Notifier = Callable[[str, str], None]
 
 
 def default_price_provider(symbols: Iterable[str]) -> dict[str, float]:
-    """Fetch latest ETF prices using yfinance."""
+    """Fetch latest ETF prices from Yahoo Finance without heavy dependencies."""
 
-    import yfinance as yf
+    symbol_list = [symbol.strip().upper() for symbol in symbols if symbol]
+    if not symbol_list:
+        return {}
+    url = "https://query1.finance.yahoo.com/v7/finance/quote"
+    try:
+        import requests
 
+        response = requests.get(url, params={"symbols": ",".join(symbol_list)}, timeout=15)
+        response.raise_for_status()
+    except ModuleNotFoundError:
+        LOGGER.warning("requests is not installed; cannot fetch prices.")
+        return {}
+    except requests.RequestException as err:
+        LOGGER.warning("Yahoo Finance request failed: %s", err)
+        return {}
+    payload = response.json()
+    results = payload.get("quoteResponse", {}).get("result", [])
     prices: dict[str, float] = {}
-    for symbol in symbols:
-        ticker = yf.Ticker(symbol)
-        info = ticker.fast_info
-        last_price = info.get("last_price")
-        if last_price is None:
-            history = ticker.history(period="1d", interval="1m")
-            if not history.empty:
-                last_price = float(history["Close"].iloc[-1])
-        if last_price is not None:
-            prices[symbol] = float(last_price)
+    for item in results:
+        symbol = str(item.get("symbol", "")).upper()
+        price = item.get("regularMarketPrice")
+        if symbol and price is not None:
+            try:
+                prices[symbol] = float(price)
+            except (TypeError, ValueError):
+                continue
+    missing = [symbol for symbol in symbol_list if symbol not in prices]
+    if missing:
+        LOGGER.warning("No prices returned for symbols: %s", ", ".join(missing))
     return prices
 
 
