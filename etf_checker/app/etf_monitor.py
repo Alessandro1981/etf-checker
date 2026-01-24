@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import logging
 import threading
 import time
@@ -71,6 +73,79 @@ def _fetch_prices_batch(symbols: list[str]) -> dict[str, float]:
     return prices
 
 
+def _fetch_prices_yahoo_with_crumb(symbols: list[str]) -> dict[str, float]:
+    """Fallback provider using Yahoo Finance crumb flow."""
+    if not symbols:
+        return {}
+    headers = {"User-Agent": "ETF-Checker/1.0", "Accept": "application/json"}
+    url = "https://query1.finance.yahoo.com/v7/finance/quote"
+    prices: dict[str, float] = {}
+    try:
+        import requests
+
+        session = requests.Session()
+        session.get("https://fc.yahoo.com", headers=headers, timeout=10)
+        crumb_response = session.get("https://query1.finance.yahoo.com/v1/test/getcrumb", headers=headers, timeout=10)
+        crumb_response.raise_for_status()
+        crumb = crumb_response.text.strip()
+        if not crumb:
+            return {}
+        params = {"symbols": ",".join(symbols), "crumb": crumb}
+        response = session.get(url, params=params, headers=headers, timeout=15)
+        response.raise_for_status()
+    except ModuleNotFoundError:
+        LOGGER.warning("requests is not installed; cannot fetch crumb prices.")
+        return {}
+    except requests.RequestException as err:
+        LOGGER.warning("Yahoo Finance crumb request failed: %s", err)
+        return {}
+    payload = response.json()
+    results = payload.get("quoteResponse", {}).get("result", [])
+    for item in results:
+        symbol = str(item.get("symbol", "")).upper()
+        price = item.get("regularMarketPrice")
+        if symbol and price is not None:
+            try:
+                prices[symbol] = float(price)
+            except (TypeError, ValueError):
+                continue
+    return prices
+
+
+def _fetch_prices_stooq(symbols: list[str]) -> dict[str, float]:
+    """Fallback provider using Stooq CSV endpoint."""
+    if not symbols:
+        return {}
+    headers = {"User-Agent": "ETF-Checker/1.0", "Accept": "text/csv"}
+    url = "https://stooq.com/q/l/"
+    prices: dict[str, float] = {}
+    try:
+        import requests
+
+        for symbol in symbols:
+            params = {"s": symbol.lower(), "f": "sd2t2ohlcv", "h": "", "e": "csv"}
+            response = requests.get(url, params=params, headers=headers, timeout=15)
+            response.raise_for_status()
+            reader = csv.DictReader(io.StringIO(response.text))
+            row = next(reader, None)
+            if not row:
+                continue
+            close_value = row.get("Close")
+            if close_value in (None, "", "N/A"):
+                continue
+            try:
+                prices[symbol.upper()] = float(close_value)
+            except (TypeError, ValueError):
+                continue
+    except ModuleNotFoundError:
+        LOGGER.warning("requests is not installed; cannot fetch fallback prices.")
+        return {}
+    except requests.RequestException as err:
+        LOGGER.warning("Stooq request failed: %s", err)
+        return {}
+    return prices
+
+
 def default_price_provider(symbols: Iterable[str]) -> dict[str, float]:
     """Fetch latest ETF prices from Yahoo Finance without heavy dependencies."""
 
@@ -85,6 +160,14 @@ def default_price_provider(symbols: Iterable[str]) -> dict[str, float]:
         if index + batch_size < len(symbol_list):
             time.sleep(0.5)
     missing = [symbol for symbol in symbol_list if symbol not in prices]
+    if missing:
+        LOGGER.warning("Attempting Yahoo Finance crumb fallback for symbols: %s", ", ".join(missing))
+        prices.update(_fetch_prices_yahoo_with_crumb(missing))
+        missing = [symbol for symbol in symbol_list if symbol not in prices]
+    if missing:
+        LOGGER.warning("Attempting Stooq fallback for symbols: %s", ", ".join(missing))
+        prices.update(_fetch_prices_stooq(missing))
+        missing = [symbol for symbol in symbol_list if symbol not in prices]
     if missing:
         LOGGER.warning("No prices returned for symbols: %s", ", ".join(missing))
     return prices
