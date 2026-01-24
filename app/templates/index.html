@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ETF Checker</title>
+    <link rel="stylesheet" href="{{ ingress_root }}/static/style.css" />
+  </head>
+  <body data-ingress-root="{{ ingress_root }}">
+    <main class="container">
+      <header class="header">
+        <h1>ETF Checker</h1>
+        <p>
+          Inserisci la lista di ETF (separati da virgola) e la soglia percentuale comune.
+          Quando la variazione rispetto al baseline supera la soglia, inviamo una notifica.
+        </p>
+      </header>
+
+      <section class="card">
+        <h2>Configurazione</h2>
+        <form id="config-form" class="form">
+          <label for="symbols">ETF (es. SWDA.MI, CSPX.MI)</label>
+          <textarea id="symbols" name="symbols" rows="3" placeholder="SWDA.MI, CSPX.MI">{{ symbols }}</textarea>
+
+          <label for="threshold">Soglia percentuale</label>
+          <input
+            id="threshold"
+            name="threshold"
+            type="number"
+            min="0.1"
+            step="0.1"
+            value="{{ threshold }}"
+            required
+          />
+
+          <div class="actions">
+            <button type="submit">Salva configurazione</button>
+            <button type="button" id="poll-btn" class="secondary">Esegui controllo ora</button>
+          </div>
+        </form>
+        <p class="hint">
+          Intervallo di polling: <strong>{{ poll_interval }}</strong> secondi. Servizio notify:
+          <strong>{{ notify_service }}</strong>
+        </p>
+        <p id="status" class="status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section class="card">
+        <h2>Baseline correnti</h2>
+        {% if baselines %}
+        <ul class="baseline-list">
+          {% for symbol, value in baselines.items() %}
+          <li><strong>{{ symbol }}</strong>: {{ "%.2f"|format(value) }}</li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p>Nessun baseline salvato: verrà creato al prossimo polling con prezzi disponibili.</p>
+        {% endif %}
+      </section>
+    </main>
+
+    <script>
+      const ingressRoot = document.body.dataset.ingressRoot || "";
+      const apiBase = ingressRoot ? `${ingressRoot}` : "";
+      const form = document.getElementById("config-form");
+      const statusEl = document.getElementById("status");
+      const pollBtn = document.getElementById("poll-btn");
+
+      function setStatus(message, tone = "info") {
+        statusEl.textContent = message;
+        statusEl.dataset.tone = tone;
+      }
+
+      async function postJson(path, payload) {
+        const response = await fetch(`${apiBase}${path}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(text || `HTTP ${response.status}`);
+        }
+        return response.json();
+      }
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const symbols = document.getElementById("symbols").value;
+        const threshold = document.getElementById("threshold").value;
+        setStatus("Salvataggio in corso...");
+        try {
+          const result = await postJson("/api/config", {
+            etf_symbols: symbols,
+            threshold_percent: threshold,
+          });
+          setStatus(
+            `Configurazione salvata. ETF: ${result.etf_symbols.join(", ")} — soglia ${result.threshold_percent.toFixed(2)}%`,
+            "success",
+          );
+        } catch (error) {
+          console.error(error);
+          setStatus(`Errore durante il salvataggio: ${error.message}`, "error");
+        }
+      });
+
+      pollBtn.addEventListener("click", async () => {
+        setStatus("Polling manuale in corso...");
+        try {
+          await postJson("/api/poll", {});
+          setStatus("Polling completato.", "success");
+        } catch (error) {
+          console.error(error);
+          setStatus(`Errore durante il polling: ${error.message}`, "error");
+        }
+      });
+    </script>
+  </body>
+</html>
