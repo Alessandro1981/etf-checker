@@ -18,25 +18,23 @@ PriceProvider = Callable[[Iterable[str]], dict[str, float]]
 Notifier = Callable[[str, str], None]
 
 
-def default_price_provider(symbols: Iterable[str]) -> dict[str, float]:
-    """Fetch latest ETF prices from Yahoo Finance without heavy dependencies."""
-
-    symbol_list = [symbol.strip().upper() for symbol in symbols if symbol]
-    if not symbol_list:
-        return {}
+def _fetch_prices_batch(symbols: list[str]) -> dict[str, float]:
     url = "https://query1.finance.yahoo.com/v7/finance/quote"
     headers = {"User-Agent": "ETF-Checker/1.0"}
     try:
         import requests
 
-        params = {"symbols": ",".join(symbol_list)}
-        for attempt in range(2):
+        params = {"symbols": ",".join(symbols)}
+        delay = 2.0
+        for attempt in range(3):
             response = requests.get(url, params=params, headers=headers, timeout=15)
-            if response.status_code == 429 and attempt == 0:
+            if response.status_code == 429 and attempt < 2:
                 retry_after = response.headers.get("Retry-After")
-                delay = float(retry_after) if retry_after and str(retry_after).isdigit() else 2.0
+                if retry_after and str(retry_after).isdigit():
+                    delay = max(delay, float(retry_after))
                 LOGGER.warning("Yahoo Finance rate limited (429). Retrying in %.1fs.", delay)
                 time.sleep(delay)
+                delay *= 2
                 continue
             response.raise_for_status()
             break
@@ -57,6 +55,22 @@ def default_price_provider(symbols: Iterable[str]) -> dict[str, float]:
                 prices[symbol] = float(price)
             except (TypeError, ValueError):
                 continue
+    return prices
+
+
+def default_price_provider(symbols: Iterable[str]) -> dict[str, float]:
+    """Fetch latest ETF prices from Yahoo Finance without heavy dependencies."""
+
+    symbol_list = [symbol.strip().upper() for symbol in symbols if symbol]
+    if not symbol_list:
+        return {}
+    prices: dict[str, float] = {}
+    batch_size = 5
+    for index in range(0, len(symbol_list), batch_size):
+        batch = symbol_list[index : index + batch_size]
+        prices.update(_fetch_prices_batch(batch))
+        if index + batch_size < len(symbol_list):
+            time.sleep(0.5)
     missing = [symbol for symbol in symbol_list if symbol not in prices]
     if missing:
         LOGGER.warning("No prices returned for symbols: %s", ", ".join(missing))
