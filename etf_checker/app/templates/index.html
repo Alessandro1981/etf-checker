@@ -71,8 +71,15 @@
         statusEl.dataset.tone = tone;
       }
 
+      function buildUrl(path) {
+        if (apiBase) {
+          return `${apiBase}/${path.replace(/^\/+/, "")}`;
+        }
+        return path.replace(/^\/+/, "");
+      }
+
       async function postJson(path, payload) {
-        const response = await fetch(`${apiBase}${path}`, {
+        const response = await fetch(buildUrl(path), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
@@ -90,7 +97,7 @@
         const threshold = document.getElementById("threshold").value;
         setStatus("Salvataggio in corso...");
         try {
-          const result = await postJson("/api/config", {
+          const result = await postJson("api/config", {
             etf_symbols: symbols,
             threshold_percent: threshold,
           });
@@ -107,7 +114,7 @@
       pollBtn.addEventListener("click", async () => {
         setStatus("Polling manuale in corso...");
         try {
-          await postJson("/api/poll", {});
+          await postJson("api/poll", {});
           setStatus("Polling completato.", "success");
         } catch (error) {
           console.error(error);
