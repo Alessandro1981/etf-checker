@@ -19,25 +19,38 @@ Notifier = Callable[[str, str], None]
 
 
 def _fetch_prices_batch(symbols: list[str]) -> dict[str, float]:
-    url = "https://query1.finance.yahoo.com/v7/finance/quote"
-    headers = {"User-Agent": "ETF-Checker/1.0"}
+    urls = [
+        "https://query2.finance.yahoo.com/v7/finance/quote",
+        "https://query1.finance.yahoo.com/v7/finance/quote",
+    ]
+    headers = {"User-Agent": "ETF-Checker/1.0", "Accept": "application/json"}
     try:
         import requests
 
         params = {"symbols": ",".join(symbols)}
-        delay = 2.0
-        for attempt in range(3):
-            response = requests.get(url, params=params, headers=headers, timeout=15)
-            if response.status_code == 429 and attempt < 2:
-                retry_after = response.headers.get("Retry-After")
-                if retry_after and str(retry_after).isdigit():
-                    delay = max(delay, float(retry_after))
-                LOGGER.warning("Yahoo Finance rate limited (429). Retrying in %.1fs.", delay)
-                time.sleep(delay)
-                delay *= 2
-                continue
-            response.raise_for_status()
-            break
+        last_error: Exception | None = None
+        for url in urls:
+            delay = 2.0
+            for attempt in range(3):
+                response = requests.get(url, params=params, headers=headers, timeout=15)
+                if response.status_code == 429 and attempt < 2:
+                    retry_after = response.headers.get("Retry-After")
+                    if retry_after and str(retry_after).isdigit():
+                        delay = max(delay, float(retry_after))
+                    LOGGER.warning("Yahoo Finance rate limited (429). Retrying in %.1fs.", delay)
+                    time.sleep(delay)
+                    delay *= 2
+                    continue
+                if response.status_code == 401:
+                    last_error = requests.HTTPError("401 Unauthorized")
+                    break
+                response.raise_for_status()
+                last_error = None
+                break
+            if last_error is None:
+                break
+        if last_error is not None:
+            raise last_error
     except ModuleNotFoundError:
         LOGGER.warning("requests is not installed; cannot fetch prices.")
         return {}
