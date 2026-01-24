@@ -16,7 +16,7 @@ Per ogni ETF viene salvato un **baseline** (prezzo di riferimento):
 
 ## Configurazione (opzioni add-on)
 
-Le opzioni principali sono in `config.json` (scheda "Configuration" dell'add-on):
+Le opzioni principali sono in `etf_checker/config.json` (scheda "Configuration" dell'add-on):
 
 - `homeassistant_url`: di default `http://supervisor/core`;
 - `homeassistant_token`: **token long-lived** di Home Assistant;
@@ -38,6 +38,7 @@ Questa configurazione viene salvata in `/data/ui_config.json`.
 Esempio (fuori da HA) per testare velocemente:
 
 ```bash
+cd etf_checker
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt pytest
