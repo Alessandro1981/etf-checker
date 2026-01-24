@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from dataclasses import dataclass
 from typing import Callable, Iterable
 
@@ -24,11 +25,21 @@ def default_price_provider(symbols: Iterable[str]) -> dict[str, float]:
     if not symbol_list:
         return {}
     url = "https://query1.finance.yahoo.com/v7/finance/quote"
+    headers = {"User-Agent": "ETF-Checker/1.0"}
     try:
         import requests
 
-        response = requests.get(url, params={"symbols": ",".join(symbol_list)}, timeout=15)
-        response.raise_for_status()
+        params = {"symbols": ",".join(symbol_list)}
+        for attempt in range(2):
+            response = requests.get(url, params=params, headers=headers, timeout=15)
+            if response.status_code == 429 and attempt == 0:
+                retry_after = response.headers.get("Retry-After")
+                delay = float(retry_after) if retry_after and str(retry_after).isdigit() else 2.0
+                LOGGER.warning("Yahoo Finance rate limited (429). Retrying in %.1fs.", delay)
+                time.sleep(delay)
+                continue
+            response.raise_for_status()
+            break
     except ModuleNotFoundError:
         LOGGER.warning("requests is not installed; cannot fetch prices.")
         return {}
