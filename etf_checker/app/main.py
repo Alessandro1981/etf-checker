@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import os
+import platform
+import sys
 from typing import Any
 
 from flask import Flask, jsonify, redirect, render_template, request, url_for
@@ -37,6 +39,8 @@ def _redact_token(token: str) -> str:
 def _log_startup_diagnostics() -> None:
     if not LOGGER.isEnabledFor(logging.DEBUG):
         return
+    LOGGER.debug("Runtime: python=%s platform=%s", sys.version.replace("\n", " "), platform.platform())
+    LOGGER.debug("Runtime: uid=%s gid=%s cwd=%s", os.getuid(), os.getgid(), os.getcwd())
     config = load_effective_config()
     options = config.options
     ui = config.ui
@@ -53,6 +57,13 @@ def _log_startup_diagnostics() -> None:
     LOGGER.debug("Options file exists: %s", Path("/data/options.json").exists())
     LOGGER.debug("UI config file exists: %s", Path("/data/ui_config.json").exists())
     LOGGER.debug("State file exists: %s", Path("/data/monitor_state.json").exists())
+
+
+def _install_exception_logging() -> None:
+    def _log_exception(exc_type: type[BaseException], exc: BaseException, tb: Any) -> None:
+        LOGGER.exception("Unhandled exception", exc_info=(exc_type, exc, tb))
+
+    sys.excepthook = _log_exception
 
 
 def _merge_config(ui_config: UiConfig) -> EffectiveConfig:
@@ -139,9 +150,14 @@ def ingress_redirect() -> Any:
 def main() -> None:
     port = int(os.environ.get("PORT", "8099"))
     ingress_entry = _ingress_root()
+    _install_exception_logging()
     LOGGER.info("Starting ETF Checker on port %s (ingress root: %s)", port, ingress_entry or "-")
     _log_startup_diagnostics()
-    APP.run(host="0.0.0.0", port=port, debug=False)
+    try:
+        APP.run(host="0.0.0.0", port=port, debug=False)
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("Flask server failed to start")
+        raise
 
 
 if __name__ == "__main__":
