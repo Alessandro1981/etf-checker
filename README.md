@@ -8,8 +8,6 @@ Questo repository ora contiene un add-on per Home Assistant / Hass.io che:
 
 I prezzi vengono letti tramite l'endpoint pubblico di Yahoo Finance, evitando dipendenze pesanti durante la build dell'add-on.
 
-L'immagine Docker crea un virtual environment (`/opt/venv`) per aggirare le restrizioni PEP 668 delle nuove immagini base Home Assistant.
-
 ## Come funziona la soglia
 
 Per ogni ETF viene salvato un **baseline** (prezzo di riferimento):

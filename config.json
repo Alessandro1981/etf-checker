@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "slug": "etf_checker",
   "description": "Monitora una lista di ETF e invia notifiche Companion quando viene superata una soglia percentuale.",
-  "url": "https://github.com/Alessandro1981/etf-checker",
+  "url": "https://example.com/etf-checker",
   "arch": ["amd64", "aarch64", "armv7", "armhf", "i386"],
   "startup": "services",
   "boot": "auto",
