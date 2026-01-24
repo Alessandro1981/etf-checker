@@ -20,6 +20,7 @@ class AddonOptions:
     notify_service: str = "notify/mobile_app_mio_telefono"
     poll_interval_seconds: int = 900
     default_threshold_percent: float = 2.0
+    log_level: str = "INFO"
 
 
 @dataclass(slots=True)
@@ -55,6 +56,7 @@ def load_addon_options() -> AddonOptions:
         default_threshold_percent=float(
             raw.get("default_threshold_percent", AddonOptions.default_threshold_percent)
         ),
+        log_level=str(raw.get("log_level", AddonOptions.log_level)),
     )
 
 

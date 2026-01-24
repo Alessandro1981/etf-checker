@@ -26,7 +26,8 @@ Le opzioni principali sono in `etf_checker/config.json` (scheda "Configuration" 
 - `homeassistant_token`: **token long-lived** di Home Assistant;
 - `notify_service`: ad esempio `notify/mobile_app_mio_telefono`;
 - `poll_interval_seconds`: intervallo di polling (min 60s);
-- `default_threshold_percent`: soglia di default usata dalla UI.
+- `default_threshold_percent`: soglia di default usata dalla UI;
+- `log_level`: verbosità dei log (`DEBUG`, `INFO`, `WARNING`, `ERROR`).
 
 ## Configurazione post-installazione (UI add-on)
 
