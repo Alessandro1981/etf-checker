@@ -20,4 +20,5 @@ RUN chmod a+x /run.sh
 
 EXPOSE 8099
 
+ENTRYPOINT ["/init"]
 CMD ["/run.sh"]
