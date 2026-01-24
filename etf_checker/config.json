@@ -1,6 +1,6 @@
 {
   "name": "ETF Checker",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "slug": "etf_checker",
   "description": "Monitora una lista di ETF e invia notifiche Companion quando viene superata una soglia percentuale.",
   "url": "https://github.com/Alessandro1981/etf-checker",
