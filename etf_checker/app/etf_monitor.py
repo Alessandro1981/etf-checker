@@ -184,20 +184,26 @@ def _fetch_prices_stooq(symbols: list[str]) -> dict[str, float]:
     return prices
 
 
-def _fetch_prices_with_suffix(
-    symbols: list[str], suffix: str, fetcher: Callable[[list[str]], dict[str, float]]
+def _fetch_prices_with_suffixes(
+    symbols: list[str], suffixes: Iterable[str], fetcher: Callable[[list[str]], dict[str, float]]
 ) -> dict[str, float]:
     if not symbols:
         return {}
-    lookup = {symbol: f"{symbol}{suffix}" for symbol in symbols if "." not in symbol}
-    if not lookup:
-        return {}
-    fetched = fetcher(list(lookup.values()))
     mapped: dict[str, float] = {}
-    for original, candidate in lookup.items():
-        price = fetched.get(candidate.upper())
-        if price is not None:
-            mapped[original] = price
+    for suffix in suffixes:
+        lookup = {symbol: f"{symbol}{suffix}" for symbol in symbols if "." not in symbol}
+        if not lookup:
+            continue
+        fetched = fetcher(list(lookup.values()))
+        for original, candidate in lookup.items():
+            if original in mapped:
+                continue
+            price = fetched.get(candidate.upper())
+            if price is not None:
+                mapped[original] = price
+        symbols = [symbol for symbol in symbols if symbol not in mapped]
+        if not symbols:
+            break
     return mapped
 
 
@@ -224,8 +230,13 @@ def default_price_provider(symbols: Iterable[str]) -> dict[str, float]:
         prices.update(_fetch_prices_stooq(missing))
         missing = [symbol for symbol in symbol_list if symbol not in prices]
     if missing:
-        LOGGER.warning("Attempting .MI suffix fallback for symbols: %s", ", ".join(missing))
-        prices.update(_fetch_prices_with_suffix(missing, ".MI", _fetch_prices_stooq))
+        suffixes = [".MI", ".DE", ".PA", ".L"]
+        LOGGER.warning(
+            "Attempting suffix fallback for symbols: %s (suffixes: %s)",
+            ", ".join(missing),
+            ", ".join(suffixes),
+        )
+        prices.update(_fetch_prices_with_suffixes(missing, suffixes, _fetch_prices_stooq))
         missing = [symbol for symbol in symbol_list if symbol not in prices]
     if missing:
         LOGGER.warning("No prices returned for symbols: %s", ", ".join(missing))
