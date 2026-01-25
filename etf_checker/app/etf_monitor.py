@@ -184,6 +184,23 @@ def _fetch_prices_stooq(symbols: list[str]) -> dict[str, float]:
     return prices
 
 
+def _fetch_prices_with_suffix(
+    symbols: list[str], suffix: str, fetcher: Callable[[list[str]], dict[str, float]]
+) -> dict[str, float]:
+    if not symbols:
+        return {}
+    lookup = {symbol: f"{symbol}{suffix}" for symbol in symbols if "." not in symbol}
+    if not lookup:
+        return {}
+    fetched = fetcher(list(lookup.values()))
+    mapped: dict[str, float] = {}
+    for original, candidate in lookup.items():
+        price = fetched.get(candidate.upper())
+        if price is not None:
+            mapped[original] = price
+    return mapped
+
+
 def default_price_provider(symbols: Iterable[str]) -> dict[str, float]:
     """Fetch latest ETF prices from Yahoo Finance without heavy dependencies."""
 
@@ -205,6 +222,10 @@ def default_price_provider(symbols: Iterable[str]) -> dict[str, float]:
     if missing:
         LOGGER.warning("Attempting Stooq fallback for symbols: %s", ", ".join(missing))
         prices.update(_fetch_prices_stooq(missing))
+        missing = [symbol for symbol in symbol_list if symbol not in prices]
+    if missing:
+        LOGGER.warning("Attempting .MI suffix fallback for symbols: %s", ", ".join(missing))
+        prices.update(_fetch_prices_with_suffix(missing, ".MI", _fetch_prices_stooq))
         missing = [symbol for symbol in symbol_list if symbol not in prices]
     if missing:
         LOGGER.warning("No prices returned for symbols: %s", ", ".join(missing))
