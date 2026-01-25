@@ -74,24 +74,42 @@ def _fetch_prices_batch(symbols: list[str]) -> dict[str, float]:
 
 
 def _fetch_prices_yahoo_with_crumb(symbols: list[str]) -> dict[str, float]:
-    """Fallback provider using Yahoo Finance crumb flow."""
+    """Fallback provider using Yahoo Finance crumb/cookie flow."""
     if not symbols:
         return {}
     headers = {"User-Agent": "ETF-Checker/1.0", "Accept": "application/json"}
     url = "https://query1.finance.yahoo.com/v7/finance/quote"
+    url_no_crumb = "https://query2.finance.yahoo.com/v7/finance/quote"
     prices: dict[str, float] = {}
     try:
         import requests
 
         session = requests.Session()
         session.get("https://fc.yahoo.com", headers=headers, timeout=10)
-        crumb_response = session.get("https://query1.finance.yahoo.com/v1/test/getcrumb", headers=headers, timeout=10)
-        crumb_response.raise_for_status()
-        crumb = crumb_response.text.strip()
-        if not crumb:
-            return {}
-        params = {"symbols": ",".join(symbols), "crumb": crumb}
-        response = session.get(url, params=params, headers=headers, timeout=15)
+        params = {"symbols": ",".join(symbols)}
+        response = session.get(url_no_crumb, params=params, headers=headers, timeout=15)
+        if response.status_code in {401, 429}:
+            crumb = ""
+            delay = 2.0
+            for attempt in range(3):
+                crumb_response = session.get(
+                    "https://query1.finance.yahoo.com/v1/test/getcrumb", headers=headers, timeout=10
+                )
+                if crumb_response.status_code == 429 and attempt < 2:
+                    retry_after = crumb_response.headers.get("Retry-After")
+                    if retry_after and str(retry_after).isdigit():
+                        delay = max(delay, float(retry_after))
+                    LOGGER.warning("Yahoo Finance crumb rate limited (429). Retrying in %.1fs.", delay)
+                    time.sleep(delay)
+                    delay *= 2
+                    continue
+                crumb_response.raise_for_status()
+                crumb = crumb_response.text.strip()
+                break
+            if not crumb:
+                return {}
+            params = {"symbols": ",".join(symbols), "crumb": crumb}
+            response = session.get(url, params=params, headers=headers, timeout=15)
         response.raise_for_status()
     except ModuleNotFoundError:
         LOGGER.warning("requests is not installed; cannot fetch crumb prices.")
