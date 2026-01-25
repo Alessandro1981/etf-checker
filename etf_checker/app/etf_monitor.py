@@ -18,6 +18,10 @@ LOGGER = logging.getLogger(__name__)
 
 PriceProvider = Callable[[Iterable[str]], dict[str, float]]
 Notifier = Callable[[str, str], None]
+_YAHOO_CRUMB_TTL_SECONDS = 1800
+_yahoo_session: "requests.Session | None" = None
+_yahoo_crumb: str | None = None
+_yahoo_crumb_timestamp: float | None = None
 
 
 def _fetch_prices_batch(symbols: list[str]) -> dict[str, float]:
@@ -84,28 +88,44 @@ def _fetch_prices_yahoo_with_crumb(symbols: list[str]) -> dict[str, float]:
     try:
         import requests
 
-        session = requests.Session()
-        session.get("https://fc.yahoo.com", headers=headers, timeout=10)
+        global _yahoo_session
+        global _yahoo_crumb
+        global _yahoo_crumb_timestamp
+        if _yahoo_session is None:
+            _yahoo_session = requests.Session()
+            _yahoo_session.get("https://fc.yahoo.com", headers=headers, timeout=10)
+        session = _yahoo_session
         params = {"symbols": ",".join(symbols)}
         response = session.get(url_no_crumb, params=params, headers=headers, timeout=15)
         if response.status_code in {401, 429}:
-            crumb = ""
-            delay = 2.0
-            for attempt in range(3):
-                crumb_response = session.get(
-                    "https://query1.finance.yahoo.com/v1/test/getcrumb", headers=headers, timeout=10
-                )
-                if crumb_response.status_code == 429 and attempt < 2:
-                    retry_after = crumb_response.headers.get("Retry-After")
-                    if retry_after and str(retry_after).isdigit():
-                        delay = max(delay, float(retry_after))
-                    LOGGER.warning("Yahoo Finance crumb rate limited (429). Retrying in %.1fs.", delay)
-                    time.sleep(delay)
-                    delay *= 2
-                    continue
-                crumb_response.raise_for_status()
-                crumb = crumb_response.text.strip()
-                break
+            now = time.monotonic()
+            if (
+                _yahoo_crumb
+                and _yahoo_crumb_timestamp
+                and now - _yahoo_crumb_timestamp < _YAHOO_CRUMB_TTL_SECONDS
+            ):
+                crumb = _yahoo_crumb
+            else:
+                crumb = ""
+                delay = 2.0
+                for attempt in range(3):
+                    crumb_response = session.get(
+                        "https://query1.finance.yahoo.com/v1/test/getcrumb", headers=headers, timeout=10
+                    )
+                    if crumb_response.status_code == 429 and attempt < 2:
+                        retry_after = crumb_response.headers.get("Retry-After")
+                        if retry_after and str(retry_after).isdigit():
+                            delay = max(delay, float(retry_after))
+                        LOGGER.warning("Yahoo Finance crumb rate limited (429). Retrying in %.1fs.", delay)
+                        time.sleep(delay)
+                        delay *= 2
+                        continue
+                    crumb_response.raise_for_status()
+                    crumb = crumb_response.text.strip()
+                    break
+                if crumb:
+                    _yahoo_crumb = crumb
+                    _yahoo_crumb_timestamp = now
             if not crumb:
                 return {}
             params = {"symbols": ",".join(symbols), "crumb": crumb}
