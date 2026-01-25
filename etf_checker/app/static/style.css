@@ -10,6 +10,18 @@
   font-family: "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f8fafc;
+    --card: rgba(255, 255, 255, 0.85);
+    --text: #0f172a;
+    --muted: #475569;
+    --accent: #2563eb;
+    --accent-strong: #1d4ed8;
+    --border: rgba(148, 163, 184, 0.4);
+  }
+}
+
 body {
   margin: 0;
   background: radial-gradient(circle at top, rgba(56, 189, 248, 0.2), transparent 55%), var(--bg);
