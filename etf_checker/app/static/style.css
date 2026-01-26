@@ -45,6 +45,7 @@ body {
 .header h1 {
   margin: 0 0 0.5rem;
   font-size: clamp(2rem, 4vw, 2.6rem);
+  color: var(--text);
 }
 
 .header p {
@@ -60,10 +61,18 @@ body {
   padding: 1.5rem;
   box-shadow: 0 20px 45px rgba(15, 23, 42, 0.45);
   backdrop-filter: blur(10px);
+  color: var(--text);
 }
 
 .card h2 {
   margin-top: 0;
+  color: var(--text);
+}
+
+.card p,
+.card li,
+.card strong {
+  color: inherit;
 }
 
 .form {
