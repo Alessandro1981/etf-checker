@@ -63,6 +63,31 @@ def _yahoo_cooldown_remaining() -> float:
     return max(_yahoo_cooldown_until - time.monotonic(), 0.0)
 
 
+def _retry_after_seconds(value: str | None) -> float | None:
+    if not value:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        pass
+    try:
+        parsed = parsedate_to_datetime(value)
+        if parsed is None:
+            return None
+        seconds = (parsed - parsed.now(parsed.tzinfo)).total_seconds()
+        return max(seconds, 0.0)
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _sleep_for_retry_after(retry_after: str | None, fallback_delay: float, context: str) -> None:
+    delay = _retry_after_seconds(retry_after)
+    if delay is None:
+        delay = fallback_delay
+    LOGGER.warning("Yahoo Finance rate limited (%s). Retrying in %.1fs.", context, delay)
+    time.sleep(delay)
+
+
 def _fetch_prices_batch(symbols: list[str]) -> dict[str, float]:
     cooldown = _yahoo_cooldown_remaining()
     if cooldown > 0:
