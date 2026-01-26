@@ -8,6 +8,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass
+from email.utils import parsedate_to_datetime
 from typing import Callable, Iterable
 
 from .config import EffectiveConfig
@@ -22,9 +23,51 @@ _YAHOO_CRUMB_TTL_SECONDS = 1800
 _yahoo_session: "requests.Session | None" = None
 _yahoo_crumb: str | None = None
 _yahoo_crumb_timestamp: float | None = None
+_yahoo_cooldown_until: float | None = None
+
+
+def _retry_after_seconds(value: str | None) -> float | None:
+    if not value:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        pass
+    try:
+        parsed = parsedate_to_datetime(value)
+        if parsed is None:
+            return None
+        seconds = (parsed - parsed.now(parsed.tzinfo)).total_seconds()
+        return max(seconds, 0.0)
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _sleep_for_retry_after(retry_after: str | None, fallback_delay: float, context: str) -> None:
+    delay = _retry_after_seconds(retry_after)
+    if delay is None:
+        delay = fallback_delay
+    _set_yahoo_cooldown(delay)
+    LOGGER.warning("Yahoo Finance rate limited (%s). Retrying in %.1fs.", context, delay)
+    time.sleep(delay)
+
+
+def _set_yahoo_cooldown(delay: float) -> None:
+    global _yahoo_cooldown_until
+    _yahoo_cooldown_until = time.monotonic() + max(delay, 0.0)
+
+
+def _yahoo_cooldown_remaining() -> float:
+    if _yahoo_cooldown_until is None:
+        return 0.0
+    return max(_yahoo_cooldown_until - time.monotonic(), 0.0)
 
 
 def _fetch_prices_batch(symbols: list[str]) -> dict[str, float]:
+    cooldown = _yahoo_cooldown_remaining()
+    if cooldown > 0:
+        LOGGER.warning("Skipping Yahoo Finance (cooldown %.1fs remaining).", cooldown)
+        return {}
     urls = [
         "https://query2.finance.yahoo.com/v7/finance/quote",
         "https://query1.finance.yahoo.com/v7/finance/quote",
@@ -40,16 +83,15 @@ def _fetch_prices_batch(symbols: list[str]) -> dict[str, float]:
             for attempt in range(3):
                 response = requests.get(url, params=params, headers=headers, timeout=15)
                 if response.status_code == 429 and attempt < 2:
-                    retry_after = response.headers.get("Retry-After")
-                    if retry_after and str(retry_after).isdigit():
-                        delay = max(delay, float(retry_after))
-                    LOGGER.warning("Yahoo Finance rate limited (429). Retrying in %.1fs.", delay)
-                    time.sleep(delay)
+                    _sleep_for_retry_after(response.headers.get("Retry-After"), delay, "quote")
                     delay *= 2
                     continue
                 if response.status_code == 401:
                     last_error = requests.HTTPError("401 Unauthorized")
                     break
+                if response.status_code == 429:
+                    cooldown = _retry_after_seconds(response.headers.get("Retry-After")) or delay
+                    _set_yahoo_cooldown(cooldown)
                 response.raise_for_status()
                 last_error = None
                 break
@@ -81,6 +123,10 @@ def _fetch_prices_yahoo_with_crumb(symbols: list[str]) -> dict[str, float]:
     """Fallback provider using Yahoo Finance crumb/cookie flow."""
     if not symbols:
         return {}
+    cooldown = _yahoo_cooldown_remaining()
+    if cooldown > 0:
+        LOGGER.warning("Skipping Yahoo Finance crumb flow (cooldown %.1fs remaining).", cooldown)
+        return {}
     headers = {"User-Agent": "ETF-Checker/1.0", "Accept": "application/json"}
     url = "https://query1.finance.yahoo.com/v7/finance/quote"
     url_no_crumb = "https://query2.finance.yahoo.com/v7/finance/quote"
@@ -96,7 +142,20 @@ def _fetch_prices_yahoo_with_crumb(symbols: list[str]) -> dict[str, float]:
             _yahoo_session.get("https://fc.yahoo.com", headers=headers, timeout=10)
         session = _yahoo_session
         params = {"symbols": ",".join(symbols)}
-        response = session.get(url_no_crumb, params=params, headers=headers, timeout=15)
+        response = None
+        delay = 2.0
+        for attempt in range(3):
+            response = session.get(url_no_crumb, params=params, headers=headers, timeout=15)
+            if response.status_code == 429 and attempt < 2:
+                _sleep_for_retry_after(response.headers.get("Retry-After"), delay, "quote")
+                delay *= 2
+                continue
+            if response.status_code == 429:
+                cooldown = _retry_after_seconds(response.headers.get("Retry-After")) or delay
+                _set_yahoo_cooldown(cooldown)
+            break
+        if response is None:
+            return {}
         if response.status_code in {401, 429}:
             now = time.monotonic()
             if (
@@ -113,13 +172,12 @@ def _fetch_prices_yahoo_with_crumb(symbols: list[str]) -> dict[str, float]:
                         "https://query1.finance.yahoo.com/v1/test/getcrumb", headers=headers, timeout=10
                     )
                     if crumb_response.status_code == 429 and attempt < 2:
-                        retry_after = crumb_response.headers.get("Retry-After")
-                        if retry_after and str(retry_after).isdigit():
-                            delay = max(delay, float(retry_after))
-                        LOGGER.warning("Yahoo Finance crumb rate limited (429). Retrying in %.1fs.", delay)
-                        time.sleep(delay)
+                        _sleep_for_retry_after(crumb_response.headers.get("Retry-After"), delay, "crumb")
                         delay *= 2
                         continue
+                    if crumb_response.status_code == 429:
+                        cooldown = _retry_after_seconds(crumb_response.headers.get("Retry-After")) or delay
+                        _set_yahoo_cooldown(cooldown)
                     crumb_response.raise_for_status()
                     crumb = crumb_response.text.strip()
                     break
@@ -129,7 +187,17 @@ def _fetch_prices_yahoo_with_crumb(symbols: list[str]) -> dict[str, float]:
             if not crumb:
                 return {}
             params = {"symbols": ",".join(symbols), "crumb": crumb}
-            response = session.get(url, params=params, headers=headers, timeout=15)
+            delay = 2.0
+            for attempt in range(3):
+                response = session.get(url, params=params, headers=headers, timeout=15)
+                if response.status_code == 429 and attempt < 2:
+                    _sleep_for_retry_after(response.headers.get("Retry-After"), delay, "quote")
+                    delay *= 2
+                    continue
+                if response.status_code == 429:
+                    cooldown = _retry_after_seconds(response.headers.get("Retry-After")) or delay
+                    _set_yahoo_cooldown(cooldown)
+                break
         response.raise_for_status()
     except ModuleNotFoundError:
         LOGGER.warning("requests is not installed; cannot fetch crumb prices.")

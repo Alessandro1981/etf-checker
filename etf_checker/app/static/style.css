@@ -2,11 +2,13 @@
   color-scheme: light dark;
   --bg: #0f172a;
   --card: rgba(15, 23, 42, 0.7);
-  --text: #e5e7eb;
-  --muted: #94a3b8;
+  --text: #f8fafc;
+  --muted: #cbd5e1;
   --accent: #38bdf8;
   --accent-strong: #0ea5e9;
   --border: rgba(148, 163, 184, 0.2);
+  --input-bg: rgba(15, 23, 42, 0.35);
+  --button-text: #f8fafc;
   font-family: "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
@@ -19,6 +21,8 @@
     --accent: #2563eb;
     --accent-strong: #1d4ed8;
     --border: rgba(148, 163, 184, 0.4);
+    --input-bg: #ffffff;
+    --button-text: #f8fafc;
   }
 }
 
@@ -41,6 +45,7 @@ body {
 .header h1 {
   margin: 0 0 0.5rem;
   font-size: clamp(2rem, 4vw, 2.6rem);
+  color: var(--text);
 }
 
 .header p {
@@ -56,10 +61,18 @@ body {
   padding: 1.5rem;
   box-shadow: 0 20px 45px rgba(15, 23, 42, 0.45);
   backdrop-filter: blur(10px);
+  color: var(--text);
 }
 
 .card h2 {
   margin-top: 0;
+  color: var(--text);
+}
+
+.card p,
+.card li,
+.card strong {
+  color: inherit;
 }
 
 .form {
@@ -69,6 +82,7 @@ body {
 
 label {
   font-weight: 600;
+  color: var(--text);
 }
 
 textarea,
@@ -77,7 +91,7 @@ input[type="number"] {
   padding: 0.75rem;
   border-radius: 0.75rem;
   border: 1px solid var(--border);
-  background: rgba(15, 23, 42, 0.35);
+  background: var(--input-bg);
   color: var(--text);
   font-size: 1rem;
 }
@@ -96,13 +110,13 @@ input[type="number"]:focus {
 }
 
 button {
-  border: none;
+  border: 1px solid var(--accent-strong);
   border-radius: 0.75rem;
   padding: 0.75rem 1.1rem;
   font-weight: 600;
   cursor: pointer;
   background: var(--accent);
-  color: #0f172a;
+  color: var(--button-text);
   transition: transform 120ms ease, background 120ms ease;
 }
 
