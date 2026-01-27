@@ -25,6 +25,7 @@ Le opzioni principali sono in `etf_checker/config.json` (scheda "Configuration" 
 - `homeassistant_url`: di default `http://supervisor/core`;
 - `homeassistant_token`: **token long-lived** di Home Assistant;
 - `notify_service`: ad esempio `notify/mobile_app_mio_telefono`;
+- `alpha_vantage_api_key`: API key Alpha Vantage (facoltativa, se impostata viene usata come prima fonte prezzi);
 - `poll_interval_seconds`: intervallo di polling (min 60s);
 - `default_threshold_percent`: soglia di default usata dalla UI;
 - `log_level`: verbosità dei log (`DEBUG`, `INFO`, `WARNING`, `ERROR`).

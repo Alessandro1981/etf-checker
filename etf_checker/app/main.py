@@ -46,6 +46,7 @@ def _log_startup_diagnostics() -> None:
     ui = config.ui
     LOGGER.debug("Effective config: homeassistant_url=%s", options.homeassistant_url)
     LOGGER.debug("Effective config: notify_service=%s", options.notify_service)
+    LOGGER.debug("Effective config: alpha_vantage_api_key=%s", _redact_token(options.alpha_vantage_api_key))
     LOGGER.debug("Effective config: poll_interval_seconds=%s", options.poll_interval_seconds)
     LOGGER.debug("Effective config: default_threshold_percent=%s", options.default_threshold_percent)
     LOGGER.debug("Effective config: log_level=%s", options.log_level)
