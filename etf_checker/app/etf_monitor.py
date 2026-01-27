@@ -8,8 +8,10 @@ import logging
 import threading
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from email.utils import parsedate_to_datetime
 from typing import Callable, Iterable
+from zoneinfo import ZoneInfo
 
 from .config import EffectiveConfig
 from .ha_client import HomeAssistantClient
@@ -437,7 +439,10 @@ class EtfMonitor:
     @property
     def state(self) -> MonitorState:
         with self._lock:
-            return MonitorState(baselines=dict(self._state.baselines))
+            return MonitorState(
+                baselines=dict(self._state.baselines),
+                last_baseline_update=self._state.last_baseline_update,
+            )
 
     def update_config(self, config: EffectiveConfig) -> None:
         with self._lock:
@@ -480,16 +485,22 @@ class EtfMonitor:
             LOGGER.warning("Price provider returned no prices.")
             return
         alerts: list[tuple[str, float, float, float]] = []
+        baseline_updated = False
         with self._lock:
             for symbol, current_price in prices.items():
                 baseline = self._state.baselines.get(symbol)
                 if baseline is None:
                     self._state.baselines[symbol] = current_price
+                    baseline_updated = True
                     continue
                 change = percent_change(baseline, current_price)
                 if abs(change) >= threshold:
                     alerts.append((symbol, baseline, current_price, change))
                     self._state.baselines[symbol] = current_price
+                    baseline_updated = True
+            if baseline_updated:
+                updated_at = datetime.now(tz=ZoneInfo("Europe/Rome"))
+                self._state.last_baseline_update = updated_at.isoformat(timespec="seconds")
             save_state(self._state)
         for symbol, baseline, current_price, change in alerts:
             self._notify(symbol, baseline, current_price, change, threshold)
