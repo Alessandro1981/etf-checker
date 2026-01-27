@@ -20,10 +20,14 @@ LOGGER = logging.getLogger(__name__)
 PriceProvider = Callable[[Iterable[str]], dict[str, float]]
 Notifier = Callable[[str, str], None]
 _YAHOO_CRUMB_TTL_SECONDS = 1800
+_ALPHA_VANTAGE_MIN_DELAY_SECONDS = 12.0
 _yahoo_session: "requests.Session | None" = None
 _yahoo_crumb: str | None = None
 _yahoo_crumb_timestamp: float | None = None
 _yahoo_cooldown_until: float | None = None
+_alpha_vantage_api_key: str | None = None
+_alpha_vantage_last_call: float | None = None
+_alpha_vantage_missing_key_logged = False
 
 
 def _retry_after_seconds(value: str | None) -> float | None:
@@ -61,6 +65,22 @@ def _yahoo_cooldown_remaining() -> float:
     if _yahoo_cooldown_until is None:
         return 0.0
     return max(_yahoo_cooldown_until - time.monotonic(), 0.0)
+
+
+def set_alpha_vantage_api_key(api_key: str) -> None:
+    global _alpha_vantage_api_key
+    _alpha_vantage_api_key = api_key.strip()
+
+
+def _alpha_vantage_throttle() -> None:
+    global _alpha_vantage_last_call
+    if _alpha_vantage_last_call is None:
+        _alpha_vantage_last_call = time.monotonic()
+        return
+    elapsed = time.monotonic() - _alpha_vantage_last_call
+    if elapsed < _ALPHA_VANTAGE_MIN_DELAY_SECONDS:
+        time.sleep(_ALPHA_VANTAGE_MIN_DELAY_SECONDS - elapsed)
+    _alpha_vantage_last_call = time.monotonic()
 
 
 def _retry_after_seconds(value: str | None) -> float | None:
@@ -277,6 +297,54 @@ def _fetch_prices_stooq(symbols: list[str]) -> dict[str, float]:
     return prices
 
 
+def _fetch_prices_alpha_vantage(symbols: list[str], api_key: str | None) -> dict[str, float]:
+    """Primary provider using Alpha Vantage Global Quote API."""
+    if not symbols:
+        return {}
+    if not api_key:
+        global _alpha_vantage_missing_key_logged
+        if not _alpha_vantage_missing_key_logged:
+            LOGGER.warning("Alpha Vantage API key not configured; skipping Alpha Vantage provider.")
+            _alpha_vantage_missing_key_logged = True
+        return {}
+    url = "https://www.alphavantage.co/query"
+    headers = {"User-Agent": "ETF-Checker/1.0", "Accept": "application/json"}
+    prices: dict[str, float] = {}
+    try:
+        import requests
+
+        for symbol in symbols:
+            _alpha_vantage_throttle()
+            params = {"function": "GLOBAL_QUOTE", "symbol": symbol, "apikey": api_key}
+            response = requests.get(url, params=params, headers=headers, timeout=15)
+            if response.status_code == 429:
+                LOGGER.warning("Alpha Vantage rate limit hit (HTTP 429).")
+                break
+            response.raise_for_status()
+            payload = response.json()
+            if "Note" in payload:
+                LOGGER.warning("Alpha Vantage rate limit hit: %s", payload.get("Note"))
+                break
+            if "Error Message" in payload:
+                LOGGER.warning("Alpha Vantage error for %s: %s", symbol, payload.get("Error Message"))
+                continue
+            quote = payload.get("Global Quote", {})
+            price_value = quote.get("05. price")
+            if price_value in (None, "", "N/A"):
+                continue
+            try:
+                prices[str(quote.get("01. symbol", symbol)).upper()] = float(price_value)
+            except (TypeError, ValueError):
+                continue
+    except ModuleNotFoundError:
+        LOGGER.warning("requests is not installed; cannot fetch Alpha Vantage prices.")
+        return {}
+    except requests.RequestException as err:
+        LOGGER.warning("Alpha Vantage request failed: %s", err)
+        return {}
+    return prices
+
+
 def _fetch_prices_with_suffixes(
     symbols: list[str], suffixes: Iterable[str], fetcher: Callable[[list[str]], dict[str, float]]
 ) -> dict[str, float]:
@@ -301,17 +369,19 @@ def _fetch_prices_with_suffixes(
 
 
 def default_price_provider(symbols: Iterable[str]) -> dict[str, float]:
-    """Fetch latest ETF prices from Yahoo Finance without heavy dependencies."""
+    """Fetch latest ETF prices using Alpha Vantage, Yahoo Finance, and fallbacks."""
 
     symbol_list = [symbol.strip().upper() for symbol in symbols if symbol]
     if not symbol_list:
         return {}
     prices: dict[str, float] = {}
     batch_size = 5
-    for index in range(0, len(symbol_list), batch_size):
-        batch = symbol_list[index : index + batch_size]
+    prices.update(_fetch_prices_alpha_vantage(symbol_list, _alpha_vantage_api_key))
+    missing = [symbol for symbol in symbol_list if symbol not in prices]
+    for index in range(0, len(missing), batch_size):
+        batch = missing[index : index + batch_size]
         prices.update(_fetch_prices_batch(batch))
-        if index + batch_size < len(symbol_list):
+        if index + batch_size < len(missing):
             time.sleep(0.5)
     missing = [symbol for symbol in symbol_list if symbol not in prices]
     if missing:
@@ -357,6 +427,7 @@ class EtfMonitor:
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
+        set_alpha_vantage_api_key(config.options.alpha_vantage_api_key)
         self._ha_client = HomeAssistantClient(
             base_url=config.options.homeassistant_url.rstrip("/"),
             token=config.options.homeassistant_token,
@@ -371,6 +442,7 @@ class EtfMonitor:
     def update_config(self, config: EffectiveConfig) -> None:
         with self._lock:
             self._config = config
+            set_alpha_vantage_api_key(config.options.alpha_vantage_api_key)
             self._ha_client = HomeAssistantClient(
                 base_url=config.options.homeassistant_url.rstrip("/"),
                 token=config.options.homeassistant_token,

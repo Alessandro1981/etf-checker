@@ -18,6 +18,7 @@ class AddonOptions:
     homeassistant_url: str = "http://supervisor/core"
     homeassistant_token: str = ""
     notify_service: str = "notify/mobile_app_mio_telefono"
+    alpha_vantage_api_key: str = ""
     poll_interval_seconds: int = 900
     default_threshold_percent: float = 2.0
     log_level: str = "INFO"
@@ -52,6 +53,7 @@ def load_addon_options() -> AddonOptions:
         homeassistant_url=str(raw.get("homeassistant_url", AddonOptions.homeassistant_url)),
         homeassistant_token=str(raw.get("homeassistant_token", AddonOptions.homeassistant_token)),
         notify_service=str(raw.get("notify_service", AddonOptions.notify_service)),
+        alpha_vantage_api_key=str(raw.get("alpha_vantage_api_key", AddonOptions.alpha_vantage_api_key)),
         poll_interval_seconds=int(raw.get("poll_interval_seconds", AddonOptions.poll_interval_seconds)),
         default_threshold_percent=float(
             raw.get("default_threshold_percent", AddonOptions.default_threshold_percent)
