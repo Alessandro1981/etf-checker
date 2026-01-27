@@ -13,6 +13,7 @@ STATE_PATH = Path("/data/monitor_state.json")
 @dataclass(slots=True)
 class MonitorState:
     baselines: dict[str, float] = field(default_factory=dict)
+    last_baseline_update: str | None = None
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -32,11 +33,17 @@ def load_state() -> MonitorState:
                 cleaned[str(symbol).upper()] = float(value)
             except (TypeError, ValueError):
                 continue
-    return MonitorState(baselines=cleaned)
+    last_baseline_update = raw.get("last_baseline_update")
+    if not isinstance(last_baseline_update, str):
+        last_baseline_update = None
+    return MonitorState(baselines=cleaned, last_baseline_update=last_baseline_update)
 
 
 def save_state(state: MonitorState) -> None:
     STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"baselines": state.baselines}
+    payload = {
+        "baselines": state.baselines,
+        "last_baseline_update": state.last_baseline_update,
+    }
     with STATE_PATH.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2)

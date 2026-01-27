@@ -6,11 +6,13 @@ import logging
 import os
 import platform
 import sys
+from datetime import datetime
 from typing import Any
 
 from flask import Flask, jsonify, redirect, render_template, request, url_for
 
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from .config import EffectiveConfig, UiConfig, load_effective_config, save_ui_config
 from .etf_monitor import EtfMonitor
@@ -77,6 +79,20 @@ def _parse_symbols(raw_symbols: str) -> list[str]:
     return [symbol for symbol in symbols if symbol]
 
 
+def _format_baseline_update(value: str | None) -> str | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=ZoneInfo("Europe/Rome"))
+    else:
+        parsed = parsed.astimezone(ZoneInfo("Europe/Rome"))
+    return parsed.strftime("%Y-%m-%d %H:%M:%S CET")
+
+
 @APP.route("/")
 def index() -> str:
     config = load_effective_config()
@@ -94,6 +110,7 @@ def index() -> str:
         poll_interval=config.options.poll_interval_seconds,
         notify_service=config.options.notify_service,
         baselines=baselines,
+        last_baseline_update=_format_baseline_update(state.last_baseline_update),
     )
 
 
@@ -107,6 +124,7 @@ def get_config() -> Any:
         "poll_interval_seconds": config.options.poll_interval_seconds,
         "notify_service": config.options.notify_service,
         "baselines": state.baselines,
+        "last_baseline_update": state.last_baseline_update,
     }
     return jsonify(payload)
 

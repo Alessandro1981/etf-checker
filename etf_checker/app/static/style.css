@@ -159,3 +159,9 @@ button.secondary:hover {
   display: grid;
   gap: 0.35rem;
 }
+
+.baseline-updated {
+  margin: 0.75rem 0 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}

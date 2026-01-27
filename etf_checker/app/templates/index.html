@@ -53,6 +53,9 @@
           <li><strong>{{ symbol }}</strong>: {{ "%.2f"|format(value) }}</li>
           {% endfor %}
         </ul>
+        {% if last_baseline_update %}
+        <p class="baseline-updated">Ultimo aggiornamento baseline (CET): {{ last_baseline_update }}</p>
+        {% endif %}
         {% else %}
         <p>Nessun baseline salvato: verrà creato al prossimo polling con prezzi disponibili.</p>
         {% endif %}
