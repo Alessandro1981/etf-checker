@@ -42,6 +42,7 @@ class MarketHours:
 _MARKET_HOURS_BY_SUFFIX: dict[str, MarketHours] = {
     ".PA": MarketHours(ZoneInfo("Europe/Paris"), dt_time(9, 0), dt_time(17, 30)),
     ".AS": MarketHours(ZoneInfo("Europe/Amsterdam"), dt_time(9, 0), dt_time(17, 30)),
+    ".DE": MarketHours(ZoneInfo("Europe/Berlin"), dt_time(9, 0), dt_time(17, 30)),
 }
 
 
