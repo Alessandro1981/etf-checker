@@ -8,7 +8,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, time as dt_time
 from email.utils import parsedate_to_datetime
 from typing import Callable, Iterable
 from zoneinfo import ZoneInfo
@@ -30,6 +30,47 @@ _yahoo_cooldown_until: float | None = None
 _alpha_vantage_api_key: str | None = None
 _alpha_vantage_last_call: float | None = None
 _alpha_vantage_missing_key_logged = False
+
+
+@dataclass(frozen=True, slots=True)
+class MarketHours:
+    timezone: ZoneInfo
+    open_time: dt_time
+    close_time: dt_time
+
+
+_MARKET_HOURS_BY_SUFFIX: dict[str, MarketHours] = {
+    ".PA": MarketHours(ZoneInfo("Europe/Paris"), dt_time(9, 0), dt_time(17, 30)),
+    ".AS": MarketHours(ZoneInfo("Europe/Amsterdam"), dt_time(9, 0), dt_time(17, 30)),
+}
+
+
+def _market_is_open(symbol: str, now: datetime) -> bool:
+    suffix = f".{symbol.rsplit('.', 1)[-1].upper()}" if "." in symbol else ""
+    market = _MARKET_HOURS_BY_SUFFIX.get(suffix)
+    if market is None:
+        return True
+    local_now = now.astimezone(market.timezone)
+    if local_now.weekday() >= 5:
+        return False
+    current_time = local_now.timetz().replace(tzinfo=None)
+    return market.open_time <= current_time < market.close_time
+
+
+def _filter_symbols_for_market_hours(symbols: list[str], now: datetime) -> list[str]:
+    open_symbols: list[str] = []
+    closed_symbols: list[str] = []
+    for symbol in symbols:
+        if _market_is_open(symbol, now):
+            open_symbols.append(symbol)
+        else:
+            closed_symbols.append(symbol)
+    if closed_symbols:
+        LOGGER.info(
+            "Skipping price fetch outside market hours for symbols: %s",
+            ", ".join(closed_symbols),
+        )
+    return open_symbols
 
 
 def _retry_after_seconds(value: str | None) -> float | None:
@@ -476,6 +517,11 @@ class EtfMonitor:
         if not symbols:
             LOGGER.debug("No ETF symbols configured; skipping poll.")
             return
+        now = datetime.now(tz=ZoneInfo("Europe/Rome"))
+        symbols = _filter_symbols_for_market_hours(symbols, now)
+        if not symbols:
+            LOGGER.info("No symbols within market hours; skipping price fetch.")
+            return
         try:
             prices = self._deps.price_provider(symbols)
         except Exception as err:  # noqa: BLE001
@@ -499,8 +545,7 @@ class EtfMonitor:
                     self._state.baselines[symbol] = current_price
                     baseline_updated = True
             if baseline_updated:
-                updated_at = datetime.now(tz=ZoneInfo("Europe/Rome"))
-                self._state.last_baseline_update = updated_at.isoformat(timespec="seconds")
+                self._state.last_baseline_update = now.isoformat(timespec="seconds")
             save_state(self._state)
         for symbol, baseline, current_price, change in alerts:
             self._notify(symbol, baseline, current_price, change, threshold)
