@@ -44,6 +44,16 @@
             required
           />
 
+          <label for="finnhub-api-key">Finnhub API key (provider secondario)</label>
+          <input
+            id="finnhub-api-key"
+            name="finnhub-api-key"
+            type="password"
+            autocomplete="off"
+            placeholder="Inserisci la chiave Finnhub"
+            value="{{ finnhub_api_key }}"
+          />
+
           <div class="actions">
             <button type="submit">Salva configurazione</button>
             <button type="button" id="poll-btn" class="secondary">Esegui controllo ora</button>
@@ -110,12 +120,14 @@
         const symbols = document.getElementById("symbols").value;
         const threshold = document.getElementById("threshold").value;
         const marketOpenRetry = document.getElementById("market-open-retry").value;
+        const finnhubApiKey = document.getElementById("finnhub-api-key").value;
         setStatus("Salvataggio in corso...");
         try {
           const result = await postJson("api/config", {
             etf_symbols: symbols,
             threshold_percent: threshold,
             market_open_retry_seconds: marketOpenRetry,
+            finnhub_api_key: finnhubApiKey,
           });
           setStatus(
             `Configurazione salvata. ETF: ${result.etf_symbols.join(", ")} — soglia ${result.threshold_percent.toFixed(2)}%`,
