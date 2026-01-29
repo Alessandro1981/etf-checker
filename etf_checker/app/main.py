@@ -56,6 +56,7 @@ def _log_startup_diagnostics() -> None:
     LOGGER.debug("UI config: symbols=%s", ", ".join(ui.etf_symbols) if ui.etf_symbols else "<none>")
     LOGGER.debug("UI config: threshold_percent=%s", ui.threshold_percent)
     LOGGER.debug("UI config: market_open_retry_seconds=%s", ui.market_open_retry_seconds)
+    LOGGER.debug("UI config: finnhub_api_key=%s", _redact_token(ui.finnhub_api_key))
     data_path = Path("/data")
     LOGGER.debug("Data path exists: %s", data_path.exists())
     LOGGER.debug("Options file exists: %s", Path("/data/options.json").exists())
@@ -109,6 +110,7 @@ def index() -> str:
         symbols=", ".join(config.ui.etf_symbols),
         threshold=config.ui.threshold_percent,
         market_open_retry_seconds=config.ui.market_open_retry_seconds,
+        finnhub_api_key=config.ui.finnhub_api_key,
         poll_interval=config.options.poll_interval_seconds,
         notify_service=config.options.notify_service,
         baselines=baselines,
@@ -149,10 +151,13 @@ def update_config() -> Any:
     except (TypeError, ValueError):
         retry_after_open = load_effective_config().ui.market_open_retry_seconds
     retry_after_open = max(retry_after_open, 0)
+    finnhub_raw = data.get("finnhub_api_key", load_effective_config().ui.finnhub_api_key)
+    finnhub_api_key = str(finnhub_raw or "").strip()
     ui_config = UiConfig(
         etf_symbols=symbols,
         threshold_percent=threshold,
         market_open_retry_seconds=retry_after_open,
+        finnhub_api_key=finnhub_api_key,
     )
     save_ui_config(ui_config)
     MONITOR.update_config(_merge_config(ui_config))
