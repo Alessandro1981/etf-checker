@@ -8,7 +8,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass
-from datetime import datetime, time as dt_time
+from datetime import datetime, time as dt_time, timedelta
 from email.utils import parsedate_to_datetime
 from typing import Callable, Iterable
 from zoneinfo import ZoneInfo
@@ -58,7 +58,9 @@ def _market_is_open(symbol: str, now: datetime) -> bool:
     return market.open_time <= current_time < market.close_time
 
 
-def _filter_symbols_for_market_hours(symbols: list[str], now: datetime) -> list[str]:
+def _partition_symbols_for_market_hours(
+    symbols: list[str], now: datetime
+) -> tuple[list[str], list[str]]:
     open_symbols: list[str] = []
     closed_symbols: list[str] = []
     for symbol in symbols:
@@ -71,7 +73,32 @@ def _filter_symbols_for_market_hours(symbols: list[str], now: datetime) -> list[
             "Skipping price fetch outside market hours for symbols: %s",
             ", ".join(closed_symbols),
         )
-    return open_symbols
+    return open_symbols, closed_symbols
+
+
+def _next_market_open_delay(symbols: list[str], now: datetime, retry_offset_seconds: int) -> float | None:
+    if not symbols:
+        return None
+    delays: list[float] = []
+    for symbol in symbols:
+        suffix = f".{symbol.rsplit('.', 1)[-1].upper()}" if "." in symbol else ""
+        market = _MARKET_HOURS_BY_SUFFIX.get(suffix)
+        if market is None:
+            return None
+        local_now = now.astimezone(market.timezone)
+        local_time = local_now.timetz().replace(tzinfo=None)
+        if local_now.weekday() < 5 and local_time < market.open_time:
+            next_open_date = local_now.date()
+        else:
+            next_open_date = local_now.date() + timedelta(days=1)
+            while next_open_date.weekday() >= 5:
+                next_open_date += timedelta(days=1)
+        next_open_dt = datetime.combine(next_open_date, market.open_time, tzinfo=market.timezone)
+        delay_seconds = (next_open_dt - local_now).total_seconds() + retry_offset_seconds
+        delays.append(max(delay_seconds, 0.0))
+    if not delays:
+        return None
+    return min(delays)
 
 
 def _retry_after_seconds(value: str | None) -> float | None:
@@ -510,27 +537,32 @@ class EtfMonitor:
             self._thread.join(timeout=5)
         LOGGER.info("ETF monitor stopped.")
 
-    def run_once(self) -> None:
+    def run_once(self) -> float | None:
         with self._lock:
             config = self._config
             symbols = list(dict.fromkeys(config.ui.etf_symbols))
             threshold = config.ui.threshold_percent
+            retry_after_open = config.ui.market_open_retry_seconds
         if not symbols:
             LOGGER.debug("No ETF symbols configured; skipping poll.")
-            return
+            return None
         now = datetime.now(tz=ZoneInfo("Europe/Rome"))
-        symbols = _filter_symbols_for_market_hours(symbols, now)
+        symbols, closed_symbols = _partition_symbols_for_market_hours(symbols, now)
         if not symbols:
+            delay = _next_market_open_delay(closed_symbols, now, retry_after_open)
+            if delay is not None:
+                LOGGER.info("No symbols within market hours; next check in %.1fs.", delay)
+                return delay
             LOGGER.info("No symbols within market hours; skipping price fetch.")
-            return
+            return None
         try:
             prices = self._deps.price_provider(symbols)
         except Exception as err:  # noqa: BLE001
             LOGGER.exception("Failed to fetch ETF prices: %s", err)
-            return
+            return None
         if not prices:
             LOGGER.warning("Price provider returned no prices.")
-            return
+            return None
         alerts: list[tuple[str, float, float, float]] = []
         baseline_updated = False
         with self._lock:
@@ -550,6 +582,7 @@ class EtfMonitor:
             save_state(self._state)
         for symbol, baseline, current_price, change in alerts:
             self._notify(symbol, baseline, current_price, change, threshold)
+        return None
 
     def _notify(self, symbol: str, baseline: float, current_price: float, change: float, threshold: float) -> None:
         direction = "salito" if change > 0 else "sceso"
@@ -569,7 +602,8 @@ class EtfMonitor:
 
     def _run_loop(self) -> None:
         while not self._stop_event.is_set():
-            self.run_once()
+            override_delay = self.run_once()
             with self._lock:
                 interval = max(self._config.options.poll_interval_seconds, 60)
-            self._stop_event.wait(interval)
+            sleep_for = override_delay if override_delay is not None else interval
+            self._stop_event.wait(sleep_for)

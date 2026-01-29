@@ -33,6 +33,17 @@
             required
           />
 
+          <label for="market-open-retry">Ritardo dopo apertura borsa (secondi)</label>
+          <input
+            id="market-open-retry"
+            name="market-open-retry"
+            type="number"
+            min="0"
+            step="10"
+            value="{{ market_open_retry_seconds }}"
+            required
+          />
+
           <div class="actions">
             <button type="submit">Salva configurazione</button>
             <button type="button" id="poll-btn" class="secondary">Esegui controllo ora</button>
@@ -98,11 +109,13 @@
         event.preventDefault();
         const symbols = document.getElementById("symbols").value;
         const threshold = document.getElementById("threshold").value;
+        const marketOpenRetry = document.getElementById("market-open-retry").value;
         setStatus("Salvataggio in corso...");
         try {
           const result = await postJson("api/config", {
             etf_symbols: symbols,
             threshold_percent: threshold,
+            market_open_retry_seconds: marketOpenRetry,
           });
           setStatus(
             `Configurazione salvata. ETF: ${result.etf_symbols.join(", ")} — soglia ${result.threshold_percent.toFixed(2)}%`,

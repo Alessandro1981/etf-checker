@@ -30,6 +30,7 @@ class UiConfig:
 
     etf_symbols: list[str]
     threshold_percent: float
+    market_open_retry_seconds: int
 
 
 @dataclass(slots=True)
@@ -73,7 +74,17 @@ def load_ui_config(default_threshold: float) -> UiConfig:
         threshold_value = float(threshold)
     except (TypeError, ValueError):
         threshold_value = default_threshold
-    return UiConfig(etf_symbols=cleaned_symbols, threshold_percent=max(threshold_value, 0.1))
+    retry_raw = raw.get("market_open_retry_seconds", 60)
+    try:
+        retry_value = int(retry_raw)
+    except (TypeError, ValueError):
+        retry_value = 60
+    retry_value = max(retry_value, 0)
+    return UiConfig(
+        etf_symbols=cleaned_symbols,
+        threshold_percent=max(threshold_value, 0.1),
+        market_open_retry_seconds=retry_value,
+    )
 
 
 def save_ui_config(config: UiConfig) -> None:
@@ -81,6 +92,7 @@ def save_ui_config(config: UiConfig) -> None:
     payload = {
         "etf_symbols": config.etf_symbols,
         "threshold_percent": config.threshold_percent,
+        "market_open_retry_seconds": config.market_open_retry_seconds,
     }
     with UI_CONFIG_PATH.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2)
