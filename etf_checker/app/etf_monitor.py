@@ -579,7 +579,7 @@ class EtfMonitor:
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
-        set_alpha_vantage_api_key(config.options.alpha_vantage_api_key)
+        set_alpha_vantage_api_key(config.ui.alpha_vantage_api_key or config.options.alpha_vantage_api_key)
         set_finnhub_api_key(config.ui.finnhub_api_key)
         self._ha_client = HomeAssistantClient(
             base_url=config.options.homeassistant_url.rstrip("/"),
@@ -598,7 +598,7 @@ class EtfMonitor:
     def update_config(self, config: EffectiveConfig) -> None:
         with self._lock:
             self._config = config
-            set_alpha_vantage_api_key(config.options.alpha_vantage_api_key)
+            set_alpha_vantage_api_key(config.ui.alpha_vantage_api_key or config.options.alpha_vantage_api_key)
             set_finnhub_api_key(config.ui.finnhub_api_key)
             self._ha_client = HomeAssistantClient(
                 base_url=config.options.homeassistant_url.rstrip("/"),

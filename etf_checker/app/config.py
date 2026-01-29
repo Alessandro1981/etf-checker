@@ -31,6 +31,7 @@ class UiConfig:
     etf_symbols: list[str]
     threshold_percent: float
     market_open_retry_seconds: int
+    alpha_vantage_api_key: str = ""
     finnhub_api_key: str = ""
 
 
@@ -81,11 +82,13 @@ def load_ui_config(default_threshold: float) -> UiConfig:
     except (TypeError, ValueError):
         retry_value = 60
     retry_value = max(retry_value, 0)
+    alpha_vantage_api_key = str(raw.get("alpha_vantage_api_key", "")).strip()
     finnhub_api_key = str(raw.get("finnhub_api_key", "")).strip()
     return UiConfig(
         etf_symbols=cleaned_symbols,
         threshold_percent=max(threshold_value, 0.1),
         market_open_retry_seconds=retry_value,
+        alpha_vantage_api_key=alpha_vantage_api_key,
         finnhub_api_key=finnhub_api_key,
     )
 
@@ -96,6 +99,7 @@ def save_ui_config(config: UiConfig) -> None:
         "etf_symbols": config.etf_symbols,
         "threshold_percent": config.threshold_percent,
         "market_open_retry_seconds": config.market_open_retry_seconds,
+        "alpha_vantage_api_key": config.alpha_vantage_api_key,
         "finnhub_api_key": config.finnhub_api_key,
     }
     with UI_CONFIG_PATH.open("w", encoding="utf-8") as handle:
