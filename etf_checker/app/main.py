@@ -55,6 +55,7 @@ def _log_startup_diagnostics() -> None:
     LOGGER.debug("Effective config: homeassistant_token=%s", _redact_token(options.homeassistant_token))
     LOGGER.debug("UI config: symbols=%s", ", ".join(ui.etf_symbols) if ui.etf_symbols else "<none>")
     LOGGER.debug("UI config: threshold_percent=%s", ui.threshold_percent)
+    LOGGER.debug("UI config: market_open_retry_seconds=%s", ui.market_open_retry_seconds)
     data_path = Path("/data")
     LOGGER.debug("Data path exists: %s", data_path.exists())
     LOGGER.debug("Options file exists: %s", Path("/data/options.json").exists())
@@ -107,6 +108,7 @@ def index() -> str:
         ingress_root=_ingress_root(),
         symbols=", ".join(config.ui.etf_symbols),
         threshold=config.ui.threshold_percent,
+        market_open_retry_seconds=config.ui.market_open_retry_seconds,
         poll_interval=config.options.poll_interval_seconds,
         notify_service=config.options.notify_service,
         baselines=baselines,
@@ -121,6 +123,7 @@ def get_config() -> Any:
     payload = {
         "etf_symbols": config.ui.etf_symbols,
         "threshold_percent": config.ui.threshold_percent,
+        "market_open_retry_seconds": config.ui.market_open_retry_seconds,
         "poll_interval_seconds": config.options.poll_interval_seconds,
         "notify_service": config.options.notify_service,
         "baselines": state.baselines,
@@ -140,11 +143,28 @@ def update_config() -> Any:
     except (TypeError, ValueError):
         threshold = load_effective_config().options.default_threshold_percent
     threshold = max(threshold, 0.1)
-    ui_config = UiConfig(etf_symbols=symbols, threshold_percent=threshold)
+    retry_raw = data.get("market_open_retry_seconds", load_effective_config().ui.market_open_retry_seconds)
+    try:
+        retry_after_open = int(retry_raw)
+    except (TypeError, ValueError):
+        retry_after_open = load_effective_config().ui.market_open_retry_seconds
+    retry_after_open = max(retry_after_open, 0)
+    ui_config = UiConfig(
+        etf_symbols=symbols,
+        threshold_percent=threshold,
+        market_open_retry_seconds=retry_after_open,
+    )
     save_ui_config(ui_config)
     MONITOR.update_config(_merge_config(ui_config))
     MONITOR.run_once()
-    return jsonify({"status": "ok", "etf_symbols": symbols, "threshold_percent": threshold})
+    return jsonify(
+        {
+            "status": "ok",
+            "etf_symbols": symbols,
+            "threshold_percent": threshold,
+            "market_open_retry_seconds": retry_after_open,
+        }
+    )
 
 
 @APP.post("/api/poll")
