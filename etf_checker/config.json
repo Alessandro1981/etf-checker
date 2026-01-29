@@ -1,6 +1,6 @@
 {
   "name": "ETF Checker",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "slug": "etf_checker",
   "description": "Monitora una lista di ETF e invia notifiche Companion quando viene superata una soglia percentuale.",
   "url": "https://github.com/Alessandro1981/etf-checker",
@@ -22,6 +22,7 @@
     "homeassistant_token": "",
     "notify_service": "notify/mobile_app_mio_telefono",
     "alpha_vantage_api_key": "",
+    "finnhub_api_key": "",
     "poll_interval_seconds": 900,
     "default_threshold_percent": 2.0,
     "log_level": "INFO"
@@ -31,6 +32,7 @@
     "homeassistant_token": "password",
     "notify_service": "str",
     "alpha_vantage_api_key": "password",
+    "finnhub_api_key": "password",
     "poll_interval_seconds": "int(60,86400)",
     "default_threshold_percent": "float(0.1,50)",
     "log_level": "list(DEBUG|INFO|WARNING|ERROR)"
